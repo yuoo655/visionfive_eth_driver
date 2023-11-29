@@ -12,6 +12,11 @@ pub struct RxDes {
     pub rdes1: u32,
     pub rdes2: u32,
     pub rdes3: u32,
+
+    pub rdes4: u32,
+    pub rdes5: u32,
+    pub rdes6: u32,
+    pub rdes7: u32,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -21,6 +26,11 @@ pub struct TxDes {
     pub tdes1: u32,
     pub tdes2: u32,
     pub tdes3: u32,
+
+    pub tdes4: u32,
+    pub tdes5: u32,
+    pub tdes6: u32,
+    pub tdes7: u32,
 }
 
 #[derive(Debug)]
@@ -69,10 +79,14 @@ pub struct RxRing<A> {
 
 impl<A: StarfiveHal> RxRing<A> {
     pub fn new() -> Self {
-        let count = 512;
-        let size = core::mem::size_of::<RxDes>() * count;
-        let pages = (size + 0x1000 - 1) / 0x1000;
-        let (va, pa) = A::dma_alloc_pages(pages);
+        let count = 128;
+        // let size = core::mem::size_of::<RxDes>() * count;
+        // let pages = (size + 0x1000 - 1) / 0x1000;
+        // let (va, pa) = A::dma_alloc_pages(pages);
+
+
+        let pa = 0x1800_2000;
+        let va = A::phys_to_virt(pa);
 
         let rd_dma = Dma::new(va as _, pa, count);
         let skbuf = Vec::new();
@@ -91,6 +105,11 @@ impl<A: StarfiveHal> RxRing<A> {
             rdes1: 0,
             rdes2: 0,
             rdes3: 0,
+
+            rdes4: 0,
+            rdes5: 0,
+            rdes6: 0,
+            rdes7: 0,
         };
         //RDES0_OWN
         rd.rdes0 = 1 << 31 as u32;
@@ -98,6 +117,7 @@ impl<A: StarfiveHal> RxRing<A> {
         rd.rdes1 |= 0x600;
         rd.rdes2 = skb_phys_addr as u32;
         self.rd.write_volatile(idx, &rd);
+        // self.skbuf.push(A::phys_to_virt(skb_phys_addr));
     }
 }
 
@@ -110,10 +130,12 @@ pub struct TxRing<A> {
 
 impl<A: StarfiveHal> TxRing<A> {
     pub fn new() -> Self {
-        let count = 512;
-        let size = core::mem::size_of::<RxDes>() * count;
-        let pages = (size + 0x1000 - 1) / 0x1000;
-        let (va, pa) = A::dma_alloc_pages(pages);
+        let count = 128;
+        // let size = core::mem::size_of::<RxDes>() * count;
+        // let pages = (size + 0x1000 - 1) / 0x1000;
+        // let (va, pa) = A::dma_alloc_pages(pages);
+        let pa = 0x1800_1000;
+        let va = A::phys_to_virt(pa);
 
         let td_dma = Dma::new(va as _, pa, count);
         let skbuf = Vec::new();
@@ -132,6 +154,11 @@ impl<A: StarfiveHal> TxRing<A> {
             tdes1: 0,
             tdes2: 0,
             tdes3: 0,
+
+            tdes4: 0,
+            tdes5: 0,
+            tdes6: 0,
+            tdes7: 0,
         };
 
         if end {
