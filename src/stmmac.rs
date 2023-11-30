@@ -37,17 +37,18 @@ impl<A: StarfiveHal> StmmacDevice<A> {
 
         let skb_start = 0x1801_0000 as usize;
     
-        for i in 0..128 {
+        
+        for i in 0..16 {
             let buff_addr = skb_start + 0x1000 * i;
             rx_ring.init_rx_desc(i, buff_addr);
             rx_ring.skbuf.push(A::phys_to_virt(buff_addr));
         }
 
         // let tskb_start = 0x1802_0000 as usize;
-        for i in 0..16 {
+        for i in 0..128 {
             tx_ring.init_tx_desc(i, false);
         }
-        tx_ring.init_tx_desc(15, true);
+        tx_ring.init_tx_desc(127, true);
 
         let nic = StmmacDevice::<A> {
             rx_ring: rx_ring,
@@ -78,10 +79,10 @@ impl<A: StarfiveHal> StmmacDevice<A> {
         // get data from skb
         let skb_va = rx_ring.skbuf[idx];
         let skb = skb_va as *mut u8;
-        // unsafe {
-        //     let packet:&[u8]=  core::slice::from_raw_parts(skb, len as usize);
-        //     log::info!("idx {:?} packet {:x?} ",idx, packet);
-        // }
+        unsafe {
+            let packet:&[u8]=  core::slice::from_raw_parts(skb, len as usize);
+            log::info!("idx {:?} packet {:x?} ",idx, packet);
+        }
 
         
 
@@ -99,14 +100,19 @@ impl<A: StarfiveHal> StmmacDevice<A> {
             read_volatile((ioaddr + 0x104c) as *mut u32)
         };
         log::info!("Current Host rx descriptor -----{:#x?}", value);
-        if idx == 127{
+        if idx == 15{
             let skb_start = 0x1801_0000 as usize;
-            for i in 0..128 {
+            for i in 0..16 {
                 let buff_addr = skb_start + 0x1000 * i;
                 rx_ring.init_rx_desc(i, buff_addr);
             }
+            let rdes_base = rx_ring.rd.phy_addr as u32;
+            sifive_ccache_flush_range::<A>(rdes_base as usize, rdes_base as usize + 0x1000);
+            sifive_ccache_flush_range::<A>(0x1801_0000 as usize, 0x1802_0000);
         }
-        rx_ring.idx = (idx + 1) % 128;
+
+
+        rx_ring.idx = (idx + 1) % 16;
     }
 
     pub fn transmit(&mut self, skb_pa: usize, len: usize) {
@@ -146,7 +152,7 @@ impl<A: StarfiveHal> StmmacDevice<A> {
 
         log::info!("transmit finish");
 
-        self.tx_ring.idx = (idx + 1) % 16;
+        self.tx_ring.idx = (idx + 1) % 128;
     }
 
 
