@@ -32,26 +32,22 @@ impl<A: StarfiveHal> StmmacDevice<A> {
         let mut rx_ring = RxRing::<A>::new();
         let mut tx_ring = TxRing::<A>::new();
 
-        log::info!("dma_alloc_pages");
+        // log::info!("dma_alloc_pages");
         // let (rx_skb_va, rx_skb_pa) = A::dma_alloc_pages(512);
 
-        log::info!("init rdesc");
-        // let skb_start = 0x1801_2000 as usize;
         let skb_start = 0x1801_0000 as usize;
-        // 0x1801_0000
+    
         for i in 0..128 {
-            // let buff_addr = rx_skb_pa + 0x1000 * i;
             let buff_addr = skb_start + 0x1000 * i;
             rx_ring.init_rx_desc(i, buff_addr);
             rx_ring.skbuf.push(A::phys_to_virt(buff_addr));
         }
-        log::info!("init tdesc");
-        // let tskb_start = 0x1801_0000 as usize;
-        let tskb_start = 0x1802_0000 as usize;
-        for i in 0..128 {
+
+        // let tskb_start = 0x1802_0000 as usize;
+        for i in 0..16 {
             tx_ring.init_tx_desc(i, false);
         }
-        tx_ring.init_tx_desc(511, true);
+        tx_ring.init_tx_desc(15, true);
 
         let nic = StmmacDevice::<A> {
             rx_ring: rx_ring,
@@ -82,12 +78,12 @@ impl<A: StarfiveHal> StmmacDevice<A> {
         // get data from skb
         let skb_va = rx_ring.skbuf[idx];
         let skb = skb_va as *mut u8;
-        unsafe {
-            let packet:&[u8]=  core::slice::from_raw_parts(skb, len as usize);
-            log::info!("idx {:?} packet {:x?} ",idx, packet);
-        }
+        // unsafe {
+        //     let packet:&[u8]=  core::slice::from_raw_parts(skb, len as usize);
+        //     log::info!("idx {:?} packet {:x?} ",idx, packet);
+        // }
 
-        rx_ring.idx = (idx + 1) % 16;
+        
 
         Some((skb, len))
     }
@@ -97,41 +93,20 @@ impl<A: StarfiveHal> StmmacDevice<A> {
         let rd_dma = &mut rx_ring.rd;
         let idx = rx_ring.idx;
 
-        let mut i = 0;
-        if idx - 1 == 0 {
-            i = 15;
-        }else{
-            i = idx -1;
+        log::info!("clean idx {:?}", idx);
+        let ioaddr = A::phys_to_virt(0x1002_0000);
+        let value = unsafe{
+            read_volatile((ioaddr + 0x104c) as *mut u32)
+        };
+        log::info!("Current Host rx descriptor -----{:#x?}", value);
+        if idx == 127{
+            let skb_start = 0x1801_0000 as usize;
+            for i in 0..128 {
+                let buff_addr = skb_start + 0x1000 * i;
+                rx_ring.init_rx_desc(i, buff_addr);
+            }
         }
-        log::info!("clean {:?}", i);
-        let skb_start = 0x1801_0000 as usize;
-        let buff_addr = skb_start + 0x1000 * i;
-        rx_ring.init_rx_desc(i, buff_addr);
-
-        // let rd = rd_dma.read_volatile(idx).unwrap();
-
-        // let rdes0 = rd.rdes0;
-
-        // let status = rdes0 & (1 << 31);
-
-        // if status >> 31 == 1 {
-        //     // log::info!("dma own");
-        //     return None;
-        // }
-
-        // let len = (rdes0 & DESC_RXSTS_FRMLENMSK) >> DESC_RXSTS_FRMLENSHFT;
-
-        // // get data from skb
-        // let skb_va = rx_ring.skbuf[idx];
-        // let skb = skb_va as *mut u8;
-        // unsafe {
-        //     let packet:&[u8]=  core::slice::from_raw_parts(skb, len as usize);
-        //     log::info!("idx {:?} packet {:x?} ",idx, packet);
-        // }
-
-        // rx_ring.idx = (idx + 1) % 16;
-
-        // Some((skb, len))
+        rx_ring.idx = (idx + 1) % 128;
     }
 
     pub fn transmit(&mut self, skb_pa: usize, len: usize) {
@@ -150,6 +125,15 @@ impl<A: StarfiveHal> StmmacDevice<A> {
         unsafe {
             write_volatile((ioaddr + 0x1004) as *mut u32, 0x1);
         }
+        let value = unsafe{
+            read_volatile((ioaddr + 0x1048) as *mut u32)
+        };
+        log::info!("Current Host tx descriptor -----{:#x?}", value);
+
+        let value = unsafe{
+            read_volatile((ioaddr + 0x1048) as *mut u32)
+        };
+        log::info!("wait until transmit finish");
 
         // wait until transmit finish
         loop {
@@ -159,15 +143,27 @@ impl<A: StarfiveHal> StmmacDevice<A> {
             }
         }
 
-        let value = unsafe{
-            read_volatile((ioaddr + 0x1048) as *mut u32)
-        };
-        // log::info!("Current Host tx descriptor -----{:#x?}", value);
 
         log::info!("transmit finish");
 
-        self.tx_ring.idx = (idx + 1) % 512;
+        self.tx_ring.idx = (idx + 1) % 16;
     }
+
+
+    pub fn tx_clean(&mut self){
+
+        // let tx_ring = &mut self.tx_ring;
+        // let idx = tx_ring.idx;
+        // log::info!("---------tx clean--------idx{:#x?}", idx);
+        // if idx == 15{
+        //     for i in 0..16 {
+        //         tx_ring.init_tx_desc(i, false);
+        //     }
+        //     tx_ring.init_tx_desc(15, true);
+        // }
+        // tx_ring.idx = (idx + 1) % 16;
+    }
+
 
     pub fn dma_reset(&self) {
         let ioaddr = A::phys_to_virt(0x1002_0000);
@@ -192,6 +188,7 @@ impl<A: StarfiveHal> StmmacDevice<A> {
         let ioaddr = A::phys_to_virt(0x1002_0000);
         unsafe {
             write_volatile((ioaddr + DMA_BUS_MODE) as *mut u32, 0x910880);
+            // write_volatile((ioaddr + 0x1028) as *mut u32, 0xf0);
         }
     }
 
@@ -227,6 +224,14 @@ impl<A: StarfiveHal> StmmacDevice<A> {
             write_volatile((ioaddr + 0x44) as *mut u32, macid_lo);
         }
     }
+
+    pub fn core_init(&self) {
+        let ioaddr = A::phys_to_virt(0x1002_0000);
+        unsafe {
+            write_volatile((ioaddr) as *mut u32, 0x618000);
+        }
+    }
+
 
     pub fn stmmac_set_mac(&self,enable: bool) {
         let old_val: u32;
